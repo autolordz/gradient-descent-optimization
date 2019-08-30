@@ -4,60 +4,74 @@ Created on Mon May  6 09:12:20 2019
 
 @author: autol
 """
-
-import pandas as pd
-from scipy import sparse,stats
-import numpy as np
-np.set_printoptions(precision=3)
-#pd.set_option('display.max_rows', -1)
-
 #%%
+from depends import *
+
+#%% Matrix 1
 n,m=5,3
-A = sparse.random(n,m, density=.9,
+A = sparse.random(n,m, density=.8,
                   data_rvs=stats.randint(1,6).rvs).toarray()
-A
-#%%
-n = 5
-np.set_printoptions(precision=3)
-d = round(.7*n*n)
-A = np.random.randint(1,5,(n,n)).astype(np.float)
-A.ravel()[np.random.choice(A.size,d,replace=False)] = np.nan
-A
-#%%
+print(A)
+#%% Matrix 2
+n,m = (18,15)
+dnan = round(.7*n*m)
+A = np.random.randint(1,5,(n,m)).astype(np.float)
+A.ravel()[np.random.choice(A.size,dnan,replace=False)] = np.nan
+print(A)
+#%% Matrix 3
 # [soft impute referense](https://cran.r-project.org/web/packages/softImpute/vignettes/softImpute.html)
 A = np.array([[0.8654889,0.01565179,0.1747903,np.nan, np.nan],
         [-0.6004172,np.nan,-0.2119090,np.nan,np.nan],
         [-0.7169292,np.nan, np.nan,0.06437356,-0.09754133],
-        [0.6965558,-0.50331812,0.5584839 ,1.54375663 ,np.nan],     
+        [0.6965558,-0.50331812,0.5584839 ,1.54375663 ,np.nan],
         [1.2311610,-0.34232368,-0.8102688 ,-0.82006429 ,-0.13256942],
         [0.2664415,0.14486388,np.nan,np.nan, -2.24087863]
         ])
-A
+print(A)
+
 #%%
-def SoftImpute(X,
-               k=2,
-               λs=[0],
-               n_iters=20,
-               flag = 0,
-               trace=True,
-               final_svd=True,
-               svdw=0,
-               func=''):
-    def P(X): # impute 0
-        return np.nan_to_num(X)
-    
-    def Pmean(A): # impute mean
+@accepts(func=str)
+def SoftImpute(
+                method='svda',
+                n_iters=1,
+                **kwargs):
+
+    Δh = [] # save iters records
+    X = kwargs.get('X',0).copy()
+    k = kwargs.get('k',2)
+    λ = kwargs.get('λ',0)
+    isscale = kwargs.get('isscale',0)
+    trace = kwargs.get('trace',1)
+    final_svd = kwargs.get('final_svd',1)
+    svdw = kwargs.get('svdw',0)
+
+    def P(A,fill='zero'):
+        # impute: "zero", "mean", "median", "min", "random"
+        Anas = np.isnan(A)
         X = A.copy()
-        col_means = np.nanmean(X, axis=0)
-        np.copyto(X, col_means, where=np.isnan(X))
+        if fill == 'zero':
+            return np.nan_to_num(X)
+        elif fill == 'mean':
+            col_fill = np.nanmean(X, axis=0)
+        elif fill == 'median':
+            col_fill = np.nanmedian(X, axis=0)
+        elif fill == 'min':
+            col_fill = np.nanmin(X, axis=0)
+        elif fill == 'random':
+            B = np.full(X.shape,np.nan)
+            B[Anas] = np.random.randn(Anas.sum())
+            B = B * np.nanstd(X, axis=0) +np.nanmean(X, axis=0)
+            X[Anas] = B[Anas]
+            return X
+        np.copyto(X, col_fill, where=np.isnan(X))
         return X
-    
+
     def Pc(X):
         return X-P(X)
-    
+
     def Sλ(X,λ):
         return np.maximum(X-λ,0) # np.sign(X)
-    
+
     def Frob1(U0,D0,V0,U,D,V): # from github
         denom = (D0 ** 2).sum()
         utu = D * (U.T.dot(U0))
@@ -65,100 +79,102 @@ def SoftImpute(X,
         uvprod = utu.dot(vtv).diagonal().sum()
         num = denom + (D**2).sum() - 2*uvprod
         return num/max(denom, 1e-9)
-    
+
     def Frob2(Z,Z1): # from textbook
         E = Z-Z1
-        a = np.trace(E.dot(E.T))
+        a = np.trace(E.dot(E.T)) # (E**2).sum()
         b = np.trace(Z.dot(Z.T))
         return a/max(b, 1e-9)
-    
+
     n,m = X.shape
     xnas = np.isnan(X)
     nz = n*m-np.sum(xnas)
-    
-    def svdk(Z,k):
+    k = np.minimum(k,min(X.shape)-1)
+    paras = ''
+
+    def svdk(Z,k): # k sparse
          return sparse.linalg.svds(Z,k=k)
-    def svd(Z):
+    def svd(Z): # full
          return np.linalg.svd(Z,full_matrices=0)
-    
-    def obj1(Z,Z1):
+    def obj1(Z,Z1): # origin
         E = (Z-Z1)[~xnas]
         return 1./2*(E**2).sum()/nz
-    
-    def obj_(D):
+    def obj_(Z,Z1,D): # penalty
         E = (Z-Z1)[~xnas]
         return (1./2*(E**2).sum()+λ*D.sum())/nz
-    
-    def SVDs(R,k=6):
-        R_Umean = np.mean(R, axis = 1)[:,np.newaxis]
-        R = R - R_Umean
-        U, S, Vt = sparse.linalg.svds(R,k)
-        R = U.dot(np.diag(S)).dot(Vt)
-        return R + R_Umean
-    
-    if 'svda' == func:
-        print('===SVD approximate===')
+
+    def trace_print():
+        if trace:
+            print(i,":",'obj=',obj.round(5),"ratio=",ratio)
+        Δh.append(np.hstack([i,obj,ratio]))
+
+    ismean = kwargs.get('ismean',0)
+    isstd = kwargs.get('isstd',0)
+
+
+    X0 = X.copy()
+    sc = ScaleX(X,isscale=isscale,
+                ismean=ismean,
+                isstd=isstd)
+    X = sc.trans(X)
+
+#    if isscale:
+#        Z_mean = np.nanmean(X, axis=1)[:,np.newaxis]
+#        X -= Z_mean
+
+    if 'svda' == method:
+        r = k
+        paras = 'r='%r
+        print('SVD approximate',paras)
 #        rr = np.minimum(k,min(X.shape))
 #        for r in range(rr+1):
-        r = np.minimum(k,min(X.shape))
-        print('====r=',r,'=====')
+
         i = 0;ratio = 1
         Z = P(X.copy())
-        
-        if flag: # centralize
-            Z_mean = np.mean(Z, axis = 1)[:,np.newaxis]
-            Z -= Z_mean
-        
-        Z0,Zp = Z.copy(),X.copy()
+
+        Z0 = Z.copy()
         Z1 = 0
         u,s,vt = np.linalg.svd(Z,full_matrices=0)
         for i in range(r):
             Z1 += s[i] * u[:,i][:,np.newaxis].dot(vt[i][np.newaxis])
             Z[xnas] = Z1[xnas]
             ratio = Frob2(Z0,Z1)
+            obj = obj1(Z,Z1)
             Z0 = Z1.copy()
             if trace:
                 aa = 100*(i+1)/(r*100+12.)
                 print(" %0.2f %%" %aa)
-        if trace:              
-            print(i,":",'obj=',obj1(Z,Z1).round(5),"ratio=",ratio)
-        print(Zp)
-        
-        if flag: # centralize
-            Z += Z_mean
-        print('\n',Z)
-    elif 'svds' == func:
-        print('Soft Impute svd')        
-        Zh = [(-1,X)]
-        for λ in λs:
-            i = 0;ratio = 1
-            Z = P(X.copy())
-            Z0,Zp = Z.copy(),X.copy()
-            svdZ = svdk(Z,k)
-            while ratio>1e-05 and i<n_iters:
-                i += 1
-                svdZ0 = svdZ
-                D = Sλ(svdZ[1],λ)
-                Z1 = svdZ[0].dot(np.diag(D)).dot(svdZ[2])
-                Z[xnas] = Z1[xnas]
-                svdZ = svdk(Z,k)
-                if flag:
-                    ratio = Frob1(svdZ0[0],D,svdZ0[2].T,
-                                  svdZ[0],Sλ(svdZ[1],λ),svdZ[2].T)
-                else:
-                    ratio = Frob2(Z0,Z1)
-                    Z0 = Z1.copy()
-            if trace:
-                print(i, ":", "obj=",obj_(D).round(5),"ratio=",ratio)
-            print(Zp)
-            print('λ=',λ,'\n',Z)
-#            Zh.append((λ,Z))
-#        return Zh
-    elif 'als' == func:
-        print('==Soft Impute=als===')
-        λ = λs[0]
+            trace_print()
+
+    elif 'svds' == method:
+        paras = 'k=%s,λ=%s'%(k,λ)
+        print('Soft Impute SVD',paras)
+
         i = 0;ratio = 1
-        if svdw:
+        Z = P(X.copy())
+        Z0 = Z.copy()
+        svdZ = svdk(Z,k)
+        while ratio>1e-05 and i<n_iters:
+            i += 1
+            svdZ0 = svdZ
+            D = Sλ(svdZ[1],λ)
+            Z1 = svdZ[0].dot(np.diag(D)).dot(svdZ[2])
+            Z[xnas] = Z1[xnas]
+            svdZ = svdk(Z,k)
+#                if flag:
+            ratio = Frob1(svdZ0[0],D,svdZ0[2].T,
+                          svdZ[0],Sλ(svdZ[1],λ),svdZ[2].T)
+#                else:
+#                    ratio = Frob2(Z0,Z1)
+#                        Z0 = Z1.copy()
+            obj = obj_(Z,Z1,D)
+            trace_print()
+    elif 'als' == method:
+        paras = 'k=%s,λ=%s'%(k,λ)
+        print('Soft Impute ALS',paras)
+
+        i = 0;ratio = 1
+        if svdw: # warm start
             Z = X.copy()
             #must have u,d and v components
 #            J = min(sum(svdw[1]>0)+1,k)
@@ -170,37 +186,28 @@ def SoftImpute(X,
                 U = svdw[0][:,:J]
                 V = (svdw[2].T)[:,:J]
                 Dsq = D[:J][:,np.newaxis]
-#                print('u=',U.shape,'dsq=',Dsq.ravel(),'vt=',V.T.shape)
             else:
                 c = np.column_stack
                 fill = np.repeat(D[JD-1],J-JD) # impute zeros with last value of D matrix
-#                Dsq = D.copy()
-#                np.copyto(Dsq,fill,where=(D==0))
-#                Dsq = Dsq[:,np.newaxis]
                 Dsq = np.append(D,fill)[:,np.newaxis]
                 Ja = J-JD
                 U = svdw[0]
-#                print('u=',U.shape,'D=',D.ravel())
                 Ua = np.random.normal(size=n*Ja).reshape(n,Ja)
-#                print('111Ua=',Ua.shape)
                 Ua = Ua - U @ U.T @ Ua
-#                print('22Ua=',Ua.shape)
                 Ua = svd(Ua)[0]
-#                print('333Ua=',Ua.shape)
                 U = c((U,Ua))
                 V = c((svdw[2].T,np.repeat(0,m*Ja).reshape(m,Ja)))
-#                print('Ua=',Ua.shape,'u=',U.shape,'dsq=',Dsq.ravel(),'vt=',V.T.shape)
             Z1 = U @ (Dsq*V.T)
             Z[xnas]=Z1[xnas]
-            print('Z=',Z.shape,'Z1=',Z1.shape)
-        else:
+#            print('Z=',Z.shape,'Z1=',Z1.shape)
+        else: # cool start
             Z = P(X.copy())
 #            k = min(sum(svd(Z)[1]>0)+1,k)
             V = np.zeros((m,k))
             U = np.random.normal(size=n*k).reshape(n,k)
             U = svd(U)[0]
             Dsq = np.repeat(1,k)[:,np.newaxis]
-            print('Z=',Z.shape,'u=',U.shape,'dsq=',Dsq.shape,'vt=',V.T.shape)
+#            print('Z=',Z.shape,'u=',U.shape,'dsq=',Dsq.shape,'vt=',V.T.shape)
         while ratio>1e-05 and i<n_iters:
             i += 1
             U0,Dsq0,V0=U,Dsq,V
@@ -209,16 +216,12 @@ def SoftImpute(X,
             if λ>0:
                 B = B*(Dsq/(Dsq+λ))
             Bsvd = svd(B.T)
-#            print('Bsvd u=',Bsvd[0].shape,
-#                  'D=',Bsvd[1].shape,
-#                  'v=',Bsvd[2].shape)
             V = Bsvd[0]
             Dsq = Bsvd[1][:,np.newaxis]
             U = U @ Bsvd[2].T
             Z1 = U @ (Dsq*V.T)
             Z[xnas] = Z1[xnas]
-            if trace:
-                obj = obj_(Dsq)
+            obj = obj_(Z,Z1,Dsq)
             # V step
             A = (Z @ V).T
             if λ>0:
@@ -231,8 +234,7 @@ def SoftImpute(X,
             Z[xnas] = Z1[xnas]
             ratio = Frob1(U0,Dsq0,V0,
                           U,Dsq,V)
-            if trace:
-                print(i, ":", "obj=",obj.round(5),"ratio=",ratio)
+            trace_print()
         if i==n_iters:
             print("Convergence not achieved by",n_iters,"iterations")
         if λ>0 and final_svd:
@@ -244,15 +246,79 @@ def SoftImpute(X,
             Dsq = Sλ(Dsq,λ)
             if trace:
                 Z1 = U @ (Dsq*V.T)
-                print("final SVD:", "obj=",obj_(Dsq).round(5),"\n")
-    
+                print("final SVD:", "obj=",obj_(Z,Z1,Dsq).round(5),"\n")
+
+#    if isscale: # centering
+#        Z += Z_mean
+    Z = sc.trans(Z,revert=1)
+
+    finals = {'final':i,'obj':obj,'ratio':ratio}
+    print(finals)
+#    print('X0= \n',X0)
+#    print('λ=',λ,', X.filed= \n',Z)
+    w_h = pd.DataFrame(Δh,columns=['iters','objF','ratio'])
+    return {'w_h':w_h,'Z':Z,'finals':finals,'paras':paras}
+
 
 #%%
-SoftImpute(A.copy(),k=3,n_iters=100,
-           trace=1,func='svda')
+
+pgrid = list(ParameterGrid({'method': [
+#                'svda',
+                'svds',
+#                'als',
+                    ],
+                 'isscale': [1,2],
+                 'ismean': [0,1],
+                 'isstd': [0,1],
+                 'k':[2],
+                 }))
+
+pgrid.sort(key=itemgetter('method','isscale'),reverse=1)
+
+finalss = iters_gd_plot(
+        X=A.copy(),
+        objf='ratio',#'ratio'
+        pgrid = pgrid,
+        func = SoftImpute,
+        trace = 0,
+        n_iters=100,
+        islogy=1,
+        doplot=1,
+        )
+
+finalss.sort(key=itemgetter('final'),reverse=1)
+finalss
 
 #%%
-#%timeit -n1 -r1 
+clf = SoftImpute(n_iters=100,
+           trace=0,
+           isscale=0,
+           method='svds',
+           X=A.copy(),
+           )
+
+
+#%%
+
+ff=[
+    'svda',
+    'svds',
+    'als',
+    ]
+
+
+iters_gd_plot(
+        X=A.copy(),
+        k=2,
+        func = SoftImpute,
+        ff=ff,
+        trace=1,
+        n_iters=100,
+        islogy=True,
+        )
+
+#%%
+#%timeit -n1 -r1
 
 SoftImpute(A.copy(),k=5,λs=[1],n_iters=100,
            svdw=np.linalg.svd(P(A),full_matrices=0),
@@ -306,20 +372,20 @@ def R_df_(R_df,k):
 def Recommend_movies(R_df, userID, movies_df,
                      ratings_df, n_movies=5,
                      hide_ranks = False):
-    
-    u_ranks = R_df.iloc[userID-1].sort_values(ascending=False) 
+
+    u_ranks = R_df.iloc[userID-1].sort_values(ascending=False)
     u_ranks = u_ranks[u_ranks!=0]
-    
+
     u_ratings = ratings_df[ratings_df.UserID == (userID)]
-    
+
     m_in_lib = (u_ratings.merge(movies_df, how = 'inner',on = 'MovieID').
       sort_values(['Rating'], ascending=False))
-    
+
     a = movies_df[~movies_df['MovieID'].isin(m_in_lib['MovieID'])] if hide_ranks else movies_df
-    
+
     b = pd.DataFrame(u_ranks).reset_index().apply(pd.to_numeric).rename(columns = {userID: 'Scores'})
-    
-    
+
+
     print('用户ID=%s的R矩阵有%s部,已经评分电影%s部,评了在库电影%s\
     部,库剩余%s部电影,打算推荐电影%s部'%(
                                 userID,
@@ -328,10 +394,10 @@ def Recommend_movies(R_df, userID, movies_df,
                                 m_in_lib.shape[0],
                                 a.shape[0],
                                 n_movies))
-    
+
     df = (a.merge(b,how = 'left',on='MovieID').
           sort_values('Scores',ascending = False).reset_index(drop=True))
-    
+
     #    df = (
     #            movies_df[~movies_df['MovieID'].isin(u_ratings_m['MovieID'])].
     #            merge(pd.DataFrame(u_ranks).reset_index().apply(pd.to_numeric),
@@ -378,4 +444,5 @@ for k in ks:
 #R_df=R_df_(R_df0,0)
 
 
+#%%
 
