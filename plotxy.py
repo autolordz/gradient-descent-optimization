@@ -9,39 +9,34 @@ Created on Tue Aug 13 21:28:52 2019
 #mk = ['.', 'o', 'v', '^', '>', '<', 's', 'p', '*', 'h', 'H', 'D', 'd', '1', '', '']
 mk = ['.', 'o', 'v', '^', '>', '<', 's', 'p', '*', 'h', 'H', 'D', 'd', '1']
 
-
 import random
 import matplotlib.pyplot as plt
 import numpy as np
 #from itertools import cycle
 #from sklearn.utils import shuffle
 
-def plot_gd_xy(
-               X,y,
-               ret=[],
-               n_batch=1):
+def get_xnyn(ret):
+    wh = ret.get('wh',0)
+    if isinstance(wh, np.ndarray):
+        xn,yn = wh[:,0],wh[:,2]
+    else:
+        dh = ret.get('dh',0)
+        xn,yn = dh[:,0],dh[:,1]
+    return xn,yn
+
+def plot_gd_xy(ret=[]):
     if len(ret) ==0: return
 
-    wh = ret.get('wh',0)
-    finals = ret.get('finals',0)
+    xn,yn = get_xnyn(ret)
+
     method = fname_dic.get(ret.get('method',''),'')
-    paras = ret.get('paras','paras')
 
-    fig, ax = plt.subplots(figsize = (8,8))
-#    ax.set_yscale('symlog',linthreshy=1e-3)
-    ax.set_xlabel('iters')
-    #ax.set_ylabel('ratio')
-    ax.set_ylabel('obj')
-
-    xn = wh[:,0]
-#    yn = wh[:,3]
-    yn = wh[:,2]
-    #ax.set_ylim(min(yn)-np.std(yn),max(yn)+np.std(yn))
+    fig, ax = plt.subplots(figsize = (8,8)) #    ax.set_yscale('symlog',linthreshy=1e-3)
+    ax.set_xlabel('iters') ;  ax.set_ylabel('obj') ; #ax.set_ylabel('ratio')     #ax.set_ylim(min(yn)-np.std(yn),max(yn)+np.std(yn))
 
     islogy=1
     axplot = ax.semilogy if islogy else ax.plot
-    axplot(
-            xn,yn,
+    axplot( xn,yn,
             '-'+random.choice(mk),
             label=method)
 #    minJ = yn.iloc[-1]
@@ -50,62 +45,81 @@ def plot_gd_xy(
 #    ax.text(0,minJ,'final(obj) %.4e'%minJ,
 #            va='top', ha="right",color='r',
 #            transform = ax.get_yaxis_transform())
-    iters =  xn[-1]
-    if isinstance(y, np.ndarray):
-        ax.set_title("y.size=%s,batch=%s,iters=%s,\n %s"%(y.shape[0],n_batch,iters,paras))
-    else:
-        ax.set_title('X.size=%s,iters=%s'%(X.shape,iters))
-    ax.legend(loc=0)
     ax.grid(True)
+    return 1
 
 #%%
-#@accepts(A=np.ndarray,pgrid=list)
+def iters_matrix_plot(rets,*args,onplot=1,**kwargs):
+
+    # plot parameters
+    if len(rets) ==0: return 0
+    pgrid = args[0]; lastJ=[]
+    if not isinstance(pgrid,list) or len(pgrid) == 0:
+        print('There\'s no method to plot')
+        return None
+
+    # prepare to plot
+    fig, ax = plt.subplots(figsize = (8,8))
+    islogy=1  ;  axplot = ax.semilogy if islogy else ax.plot
+
+    # for loop to plot lines
+    for ret,pg in zip(rets,pgrid):
+        xn,yn = get_xnyn(ret)
+        axplot(xn,yn,'-'+random.choice(mk),label=pg)
+        lastJ.append([yn[-1],pg])
+    a = np.stack(lastJ)
+    minJ = a[a[:,0].argmin()]
+    # plot ax
+    if onplot:
+        ax.set_xlabel('xn') ;  ax.set_ylabel('yn')
+        ax.set_title('Impute best %s'%minJ[1])
+        ax.axhline(y = minJ[0],color='r')
+        ax.text(0,minJ[0],'min() %.4e'%minJ[0], va='top', ha="right",color='r',
+                transform = ax.get_yaxis_transform()) # 最小项
+        ax.legend(loc=0)
+        ax.grid(True)
+    return 1
+
 def iters_gd_plot(rets,var,pgrid,paras=0,
                   n_iters=1,onplot=1,
                   **kwargs):
-    y=var.y
+
+    # plot parameters
+    if len(rets) ==0: return 0
+    lastJ = []
     poparas = dict(iters=0,w=1,obj=2,ratio=3)
     poparas = dict(zip(poparas.values(), poparas.keys()))
-    lastJ = [] ;  pfinals = [] ;   w_finals = []
     if not onplot:return None
     if not isinstance(pgrid,list) or len(pgrid) == 0:
         print('There\'s no method to plot')
         return None
+
     # prepare to plot
     fig, ax = plt.subplots(figsize = (8,8))
-    mk = ['.', 'o', 'v', '^', '>', '<', 's', 'p', '*', 'h', 'H', 'D', 'd', '1', '', '']
     islogy=1  ;  axplot = ax.semilogy if islogy else ax.plot
 #        mkpool = cycle(shuffle(mk))
 #        cmap = plt.get_cmap('Set1')
 #        colors = cmap(np.random.rand(len(pgrid)))
-    for ret,pg in zip(rets,pgrid): # for loop to plot lines
-        wh = ret.get('wh',0) ; finals = ret.get('finals',{}) ;
-        w_finals.append(finals.get('w',0))
-        pfinals.append(finals)
-        idx = 2;
-        xn,yn = wh[:,0],wh[:,idx]
-        lastJ.append(finals.get('e1',0))
-        axplot(xn,yn,'-'+random.choice(mk),label=pg)
 
+    # for loop to plot lines
+    for ret,pg in zip(rets,pgrid): # for loop to plot lines
+        xn,yn = get_xnyn(ret)
+        axplot(xn,yn,'-'+random.choice(mk),label=pg)
+        lastJ.append([yn[-1],pg])
+
+    a = np.stack(lastJ)
+    minJ = a[a[:,0].argmin()]
+
+    # plot ax
     if onplot:
-        minJ = min(lastJ)
-        ax.set_xlabel(poparas[0])
-        ax.set_ylabel(poparas[idx])
-        ax.axhline(y = minJ,color='r')
-        ax.text(0,minJ,'min() %.4e'%minJ,
-                va='top', ha="right",color='r',
-                transform = ax.get_yaxis_transform())
-        if isinstance(y, np.ndarray):
-            ax.set_title('paras %s'%paras)
-#            ax.set_title('y.size=%s,batch=%s,min(iters)=%s,\n %s'%(y.shape[0],n_b,iters,paras))
-        else:
-            pass
-#            ax.set_title('X.size=%s min(iters)=%s'%(X.shape,iters))
+        ax.set_xlabel('xn') ;  ax.set_ylabel('yn')
+        ax.set_title('best %s \n paras %s'%(minJ[1],paras))
+        ax.axhline(y = minJ[0],color='r')
+        ax.text(0,minJ[0],'min() %.4e'%minJ[0],va='top', ha="right",color='r',
+                transform = ax.get_yaxis_transform()) # 最小项
         ax.legend(loc=0)
         ax.grid(True)
-
-#    return pfinals,w_finals
-
+    return 1
 
 def plot_gd_contour(J,wws,ess,pgrid,skwargs,B):
     wstart,wend = wws[0][0],wws[0][-1]

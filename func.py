@@ -19,7 +19,7 @@ def gradient_descent_f(var,
                         sgd=0,method='mm10',isStep=0,
                         trace=1,doplot=1,ŋ=0,ŋ_a=1,skipConv=1,
                         **kwargs):
-    dh = []
+    records = []
     # Shuffle X,y
 #    r_index = np.random.RandomState(seed=43).permutation(len(y))
 #    X1 = X[r_index,:]
@@ -46,7 +46,7 @@ def gradient_descent_f(var,
     e1 = var.J(w)
     ratio = 0
     n_w,n_y=len(w),len(y)
-    dh.append([-1,w.copy(),e1,ratio])
+    records.append([-1,w.copy(),e1,ratio])
     for i in range(n_iters):
         if sgd == 0:
             #if isStep : #and not method in ['mm52','mm26']
@@ -73,7 +73,7 @@ def gradient_descent_f(var,
             isConv,ratio = Cc.Conv(w,e1,ŋ,skipConv)
         else:
             print('None...');return None
-        dh.append([i,w.copy(),e1,ratio])
+        records.append([i,w.copy(),e1,ratio])
         ret = dict(ik=i,w=w,e1=e1,ratio=ratio)
 
 #        print(ret)
@@ -83,7 +83,7 @@ def gradient_descent_f(var,
     if not doplot: print('There\'s no method:',method)
     time2 = time.time()
     print('All Running time: %s Seconds'%(time2-time1))
-    rets = dict(wh=np.stack(dh),finals=ret,method=method)
+    rets = dict(wh=np.stack(records),finals=ret,method=method)
     return rets
 
 #%%

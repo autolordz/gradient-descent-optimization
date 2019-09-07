@@ -2,19 +2,23 @@
 
 a python script of a function summarize some popular methods about gradient descent  
 一个python数值模拟脚本,包含诸多概念和算法  
-监督学习目标函数：普通最小二乘OLS,二次型函数,其他  
-非监督学习目标函数：矩阵近似  
-机器学习模型和凸优化求解的练手项目  
+监督学习目标函数：线性回归,普通最小二乘OLS,二次型函数,闭式解和梯度解  
+非监督学习目标函数：矩阵近似, 矩阵分解, 分数推荐  
+机器学习、函数逼近模型和凸优化求解的练手项目  
 Python编写和使用简明的数学符号  
 
 ## Updated  
 
 【2019-8-30】  
-添加contour轮廓线
+添加contour轮廓线  
 ![](./img/gcontour1.png)
 
 【2019-5-6】  
-矩阵分解和推荐系统等内容  
+矩阵分解和推荐系统等内容
+下图展示非约束矩阵分解的矩阵填充 [参考softImpute_R_code](https://github.com/cran/softImpute/blob/master/R/simpute.svd.R)  
+n_X是方阵大小, den_X是稀疏密度0~1，k值是选取多少个svd变量，称截取svd
+x坐标是迭代次数，y坐标是目标函数(矩阵F范数)
+![](./img/mimpute1.png)
 
 【2019-4-25】  
 添加约束优化L1L2等内容  
