@@ -12,7 +12,7 @@ def Fill(A,fill='zero'): # impute: "zero", "mean", "median", "min", "random"
         if fill == 'zero':
             return np.nan_to_num(X)
         elif fill == 'mean':
-            col_fill = np.nanmean(X, axis=0)
+            col_fill = np.nanmean(X, axis=0) # 忽略nan的均值
         elif fill == 'median':
             col_fill = np.nanmedian(X, axis=0)
         elif fill == 'min':
@@ -20,7 +20,7 @@ def Fill(A,fill='zero'): # impute: "zero", "mean", "median", "min", "random"
         elif fill == 'random':
             B = np.full(X.shape,np.nan)
             B[Anas] = np.random.randn(Anas.sum())
-            B = B * np.nanstd(X, axis=0) +np.nanmean(X, axis=0)
+            B = B * np.nanstd(X, axis=0) + np.nanmean(X, axis=0)
             X[Anas] = B[Anas]
             return X
         np.copyto(X, col_fill, where=np.isnan(X))
