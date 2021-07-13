@@ -6,7 +6,7 @@ Created on Tue Sep  3 12:13:19 2019
 """
 import numpy as np
 
-def Fill(A,fill='zero'): # impute: "zero", "mean", "median", "min", "random"
+def Fill(A,fill='zero'): # Fill funtion of imputing: "zero", "mean", "median", "min", "random"
         Anas = np.isnan(A)
         X = A.copy()
         if fill == 'zero':
@@ -26,7 +26,7 @@ def Fill(A,fill='zero'): # impute: "zero", "mean", "median", "min", "random"
         np.copyto(X, col_fill, where=np.isnan(X))
         return X
 
-def Prox(X,λ):
+def Prox(X,λ): # Pro function a proximate projection of X and lambda
     return np.maximum(X-λ,0) # np.sign(X)
 
 def Frob1(U0,d0,V0,U,d,V): # from github

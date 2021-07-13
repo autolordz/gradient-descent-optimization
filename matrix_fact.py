@@ -14,7 +14,7 @@ from init_matrix import init_A1,init_A2,init_A3,init_A4
 from sklearn.model_selection import ParameterGrid
 from plotxy import plot_gd_xy,iters_matrix_plot
 
-#%%
+#%% SoftImpute with svda, svds, als implement calculate details inside the functions
 
 def SoftImpute(X=0,k=2,λ=0,
                method='svda',trace=0, isScale=0,
@@ -24,7 +24,7 @@ def SoftImpute(X=0,k=2,λ=0,
     isConv=0
     n,m = X.shape ; xnas = np.isnan(X) ; nz = n*m-xnas.sum()
     if isScale: sc = ScaleX(ismean=1,isstd=1) ;  X = sc.scalef(X);X
-    Z = Fill(X.copy(),fill='zero');Z
+    Z = Fill(X.copy(),fill='zero');Z  # Fill fun for fill matrx with 0
     ratio = 0 ; dh=[]
     Z0 = Z.copy() ;  Z1 = 0 ; ratio = 0
     if 'svda' == method:
